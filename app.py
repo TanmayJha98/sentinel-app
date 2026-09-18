@@ -179,7 +179,6 @@ with tab_history:
     records = fetch_transactions()
     if records:
         df = pd.DataFrame(records)
-        # Select columns that exist in the dataframe
         display_cols = [col for col in ["created_at", "raw_text", "amount", "category", "merchant", "payment_method", "notes"] if col in df.columns]
         st.dataframe(df[display_cols], use_container_width=True)
     else:
