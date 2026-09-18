@@ -63,8 +63,8 @@ Output must strictly adhere to JSON schema:
 def parse_with_gemini(text_input, key):
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=f"Parse this text: '{text_input}'",
+    model="gemini-2.5-flash",  # Or "gemini-2.0-flash"
+    contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             response_mime_type="application/json",
