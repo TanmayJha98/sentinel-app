@@ -1,9 +1,17 @@
 import streamlit as st
 import json
 import pandas as pd
+import plotly.express as px
 from google import genai
 from google.genai import types
 from supabase import create_client, Client
+
+# --- PAGE CONFIG & CONSTANTS ---
+st.set_page_config(page_title="Sentinel Finance Tracker", page_icon="🛡️", layout="wide")
+
+LIFESTYLE_CAP = 10000
+PETROL_CAP = 3000
+MONTHLY_SURPLUS = 8832
 
 # --- SYSTEM PROMPT DEFINITION ---
 SYSTEM_PROMPT = """
@@ -85,10 +93,10 @@ with tab_input:
     with col1:
         user_input = st.text_area(
             "Paste SMS or Type Log",
-            placeholder="e.g., 'Paid Rs 450 at Taproom using Axis card' or 'Filled 300 petrol in bike via UPI' or 'Bought Marlboro 180 OneCard'",
-            height=120
+            placeholder="e.g., 'Paid Rs 450 at Taproom using Axis card' or 'Filled 300 petrol in bike via UPI'",
+            height=130
         )
-        submit_btn = st.button("🚀 Process with Gemini AI", type="primary")
+        submit_btn = st.button("🚀 Process with Gemini AI", type="primary", key="process_gemini_btn")
 
     with col2:
         st.info("""
@@ -99,15 +107,8 @@ with tab_input:
         - `Cigarettes and tea Rs 120 Cash`
         """)
 
-# Ensure api_key is retrieved from Streamlit secrets
-api_key = st.secrets.get("GEMINI_API_KEY", "")
-
-with tab_input:
-    st.subheader("Parse Payment SMS or Quick Log")
-    user_input = st.text_area("Paste SMS or Type Log", placeholder="e.g., 'Paid Rs 450 at Taproom using Axis card'", height=120)
-    submit_btn = st.button("🚀 Process with Gemini AI", type="primary", key="process_gemini_btn")
-
     if submit_btn and user_input:
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
         if not api_key:
             st.error("GEMINI_API_KEY is missing in Streamlit Secrets!")
         else:
@@ -124,20 +125,27 @@ with tab_input:
 # TAB 2: DASHBOARD & BUDGET METRICS
 # ==========================================
 with tab_dash:
-    if not st.session_state.transactions:
+    records = fetch_transactions()
+    if not records:
         st.info("No transactions logged yet. Use the first tab to add SMS inputs.")
     else:
-        df = pd.DataFrame(st.session_state.transactions)
+        df = pd.DataFrame(records)
         
-        # Calculate key metrics
-        lifestyle_spent = df[df["category"] == "Lifestyle"]["amount"].sum() if "category" in df else 0
-        commute_spent = df[df["category"] == "Commute"]["amount"].sum() if "category" in df else 0
-        card_repayments = df[df["category"] == "Card Payoff"]["amount"].sum() if "category" in df else 0
-        
-        # Metric Cards
+        # Ensure numeric conversion for calculations
+        if "amount" in df.columns:
+            df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
+        else:
+            df["amount"] = 0
+
+        # Calculate metrics
+        lifestyle_spent = df[df["category"] == "Lifestyle"]["amount"].sum() if "category" in df.columns else 0
+        commute_spent = df[df["category"].str.contains("Commute|Petrol", case=False, na=False)]["amount"].sum() if "category" in df.columns else 0
+        card_repayments = df[df["category"] == "Card Payoff"]["amount"].sum() if "category" in df.columns else 0
+
+        # Display Metric Cards
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Lifestyle Spent", f"₹{lifestyle_spent:,.0f}", f"Target: ₹{LIFESTYLE_CAP:,.0f}", delta_color="inverse")
-        m2.metric("Commute/Petrol Spent", f"₹{commute_spent:,.0f}", f"Target: ₹{PETROL_CAP:,.0f}", delta_color="inverse")
+        m1.metric("Lifestyle Spent", f"₹{lifestyle_spent:,.0f}", f"Cap: ₹{LIFESTYLE_CAP:,.0f}", delta_color="inverse")
+        m2.metric("Commute / Petrol", f"₹{commute_spent:,.0f}", f"Cap: ₹{PETROL_CAP:,.0f}", delta_color="inverse")
         m3.metric("Card Debt Repaid", f"₹{card_repayments:,.0f}")
         m4.metric("Target Surplus", f"₹{MONTHLY_SURPLUS:,.0f}", "Monthly Goal")
 
@@ -162,14 +170,17 @@ with tab_dash:
         # Visual Breakdown Charts
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Sub-Category Breakdown (Micro-Habits)")
-            fig_sub = px.pie(df, names="sub_category", values="amount", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set2)
-            st.plotly_chart(fig_sub, use_container_width=True)
+            st.subheader("Category Breakdown")
+            cat_col = "sub_category" if "sub_category" in df.columns else ("category" if "category" in df.columns else None)
+            if cat_col:
+                fig_sub = px.pie(df, names=cat_col, values="amount", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set2)
+                st.plotly_chart(fig_sub, use_container_width=True)
 
         with c2:
             st.subheader("Payment Method Distribution")
-            fig_pay = px.bar(df, x="payment_method", y="amount", color="category", barmode="stack", color_discrete_sequence=px.colors.qualitative.Pastel)
-            st.plotly_chart(fig_pay, use_container_width=True)
+            if "payment_method" in df.columns and "category" in df.columns:
+                fig_pay = px.bar(df, x="payment_method", y="amount", color="category", barmode="stack", color_discrete_sequence=px.colors.qualitative.Pastel)
+                st.plotly_chart(fig_pay, use_container_width=True)
 
 # ==========================================
 # TAB 3: TRANSACTION HISTORY
