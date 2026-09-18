@@ -99,25 +99,26 @@ with tab_input:
         - `Cigarettes and tea Rs 120 Cash`
         """)
 
-    if submit_btn:
+# Ensure api_key is retrieved from Streamlit secrets
+api_key = st.secrets.get("GEMINI_API_KEY", "")
+
+with tab_input:
+    st.subheader("Parse Payment SMS or Quick Log")
+    user_input = st.text_area("Paste SMS or Type Log", placeholder="e.g., 'Paid Rs 450 at Taproom using Axis card'", height=120)
+    submit_btn = st.button("🚀 Process with Gemini AI", type="primary")
+
+    if submit_btn and user_input:
         if not api_key:
-            st.error("Please enter your Gemini API Key in the sidebar.")
-        elif not user_input.strip():
-            st.warning("Please enter text to parse.")
+            st.error("GEMINI_API_KEY is missing in Streamlit Secrets!")
         else:
-            with st.spinner("Analyzing transaction..."):
+            with st.spinner("Processing transaction..."):
                 try:
-                    parsed_data = parse_with_gemini(user_input, api_key)
-                    
-                    # Add timestamp & raw string
-                    parsed_data["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    parsed_data["raw_text"] = user_input
-                    
-                    st.session_state.transactions.append(parsed_data)
-                    st.success(f"Parsed: ₹{parsed_data['amount']} under '{parsed_data['category']}' ({parsed_data['sub_category']}) via {parsed_data['payment_method']}")
-                    st.json(parsed_data)
+                    parsed = parse_with_gemini(user_input, api_key)
+                    save_transaction(parsed, user_input)
+                    st.success("Transaction parsed and saved to Supabase permanently!")
+                    st.json(parsed)
                 except Exception as e:
-                    st.error(f"Error parsing data: {e}")
+                    st.error(f"Error: {e}")
 
 # ==========================================
 # TAB 2: DASHBOARD & BUDGET METRICS
