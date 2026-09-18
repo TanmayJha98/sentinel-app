@@ -175,18 +175,12 @@ with tab_dash:
 # TAB 3: TRANSACTION HISTORY
 # ==========================================
 with tab_history:
-    st.subheader("All Logged Transactions")
-    if st.session_state.transactions:
-        df_hist = pd.DataFrame(st.session_state.transactions)
-        
-        # Display clean table
-        st.dataframe(
-            df_hist[["timestamp", "merchant", "amount", "category", "sub_category", "payment_method", "raw_text"]],
-            use_container_width=True
-        )
-        
-        if st.button("🗑️ Clear All Data"):
-            st.session_state.transactions = []
-            st.rerun()
+    st.subheader("Transaction History")
+    records = fetch_transactions()
+    if records:
+        df = pd.DataFrame(records)
+        # Select columns that exist in the dataframe
+        display_cols = [col for col in ["created_at", "raw_text", "amount", "category", "merchant", "payment_method", "notes"] if col in df.columns]
+        st.dataframe(df[display_cols], use_container_width=True)
     else:
-        st.write("No transaction history available.")
+        st.info("No saved transactions found in Supabase yet.")
