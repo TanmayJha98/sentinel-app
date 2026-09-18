@@ -1,70 +1,65 @@
 import streamlit as st
-import pandas as pd
 import json
-import plotly.express as px
-from datetime import datetime
+import pandas as pd
 from google import genai
 from google.genai import types
+from supabase import create_client, Client
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Sentinel - Financial & Lifestyle Tracker",
-    page_icon="🛡️",
-    layout="wide"
-)
-
-# --- INITIALIZE SESSION STATE ---
-if "transactions" not in st.session_state:
-    st.session_state.transactions = []
-
-# --- SIDEBAR & API CONFIGURATION ---
-st.sidebar.title("🛡️ Sentinel Controls")
-api_key = st.sidebar.text_input("Gemini API Key", type="password", help="Enter your Google AI Studio API key")
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🎯 Monthly Budget Targets")
-LIFESTYLE_CAP = st.sidebar.number_input("Lifestyle Cap (₹)", value=10000, step=500)
-PETROL_CAP = st.sidebar.number_input("Petrol / Commute Cap (₹)", value=3000, step=500)
-MONTHLY_SURPLUS = st.sidebar.number_input("Target Monthly Surplus (₹)", value=8832, step=500)
-
-# --- SYSTEM PROMPT FOR GEMINI ---
+# --- SYSTEM PROMPT DEFINITION ---
 SYSTEM_PROMPT = """
-You are the transaction extraction engine for Sentinel.
-Parse the incoming text (SMS, payment notification, or manual log) into a structured JSON object.
-
-Categorization Rules:
-1. Category:
-   - "Lifestyle": Food, Dining, Drinks, Social, Cigarettes, Tobacco, Grooming, Travel/Vacation.
-   - "Commute": Bike fuel, Petrol, Cab, Auto, Metro, Parking.
-   - "Card Payoff": Direct payments made towards ICICI, Axis, or OneCard bills.
-   - "Fixed/Utility": Bills, Rent, Groceries, WiFi, Electricity.
-2. Sub-Category:
-   - Food/Dining, Drinks/Alcohol, Cigarettes, Grooming, Bike Petrol, Public Transport, Card Payment, General.
-3. Payment Method:
-   - Extract explicitly if mentioned: ICICI, Axis, OneCard, UPI, Cash, Bank Transfer. If unspecified, mark as "Unknown/UPI".
-
-Output must strictly adhere to JSON schema:
+You are Sentinel, an AI financial parser. Extract structured transaction details from payment SMS or user logs.
+Return ONLY a valid JSON object with no markdown formatting or extra text, matching this structure:
 {
-  "amount": number,
-  "currency": "INR",
-  "merchant": string,
-  "category": string,
-  "sub_category": string,
-  "payment_method": string,
-  "notes": string,
-  "travel_details": {
-    "is_travel": boolean,
-    "mode": string or null,
-    "distance_km": number or null
-  }
+    "amount": number or null,
+    "category": string (e.g., "Commute / Petrol", "Food & Dining", "Bills", "Lifestyle", "Uncategorized"),
+    "merchant": string or null,
+    "payment_method": string or null (e.g., "ICICI", "Axis", "OneCard", "UPI", "Cash"),
+    "notes": string or null,
+    "travel_details": {
+        "is_travel": boolean,
+        "mode": string or null,
+        "distance_km": number or null
+    }
 }
 """
 
+# --- SUPABASE DATABASE CONNECTION ---
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
+
+def fetch_transactions():
+    try:
+        response = supabase.table("transactions").select("*").order("created_at", desc=True).execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Database error: {e}")
+        return []
+
+def save_transaction(parsed_data, raw_text):
+    travel_info = parsed_data.get("travel_details", {}) or {}
+    record = {
+        "raw_text": raw_text,
+        "amount": parsed_data.get("amount", 0),
+        "category": parsed_data.get("category", "Uncategorized"),
+        "merchant": parsed_data.get("merchant", ""),
+        "payment_method": parsed_data.get("payment_method", ""),
+        "notes": parsed_data.get("notes", ""),
+        "is_travel": travel_info.get("is_travel", False),
+        "distance_km": travel_info.get("distance_km", 0)
+    }
+    supabase.table("transactions").insert(record).execute()
+
+# --- GEMINI AI PARSER ---
 def parse_with_gemini(text_input, key):
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
-    model="gemini-2.5-flash",  # Or "gemini-2.0-flash"
-    contents=prompt,
+        model="gemini-2.0-flash",
+        contents=text_input,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             response_mime_type="application/json",
