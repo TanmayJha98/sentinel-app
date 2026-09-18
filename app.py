@@ -105,7 +105,7 @@ api_key = st.secrets.get("GEMINI_API_KEY", "")
 with tab_input:
     st.subheader("Parse Payment SMS or Quick Log")
     user_input = st.text_area("Paste SMS or Type Log", placeholder="e.g., 'Paid Rs 450 at Taproom using Axis card'", height=120)
-    submit_btn = st.button("🚀 Process with Gemini AI", type="primary")
+    submit_btn = st.button("🚀 Process with Gemini AI", type="primary", key="process_gemini_btn")
 
     if submit_btn and user_input:
         if not api_key:
