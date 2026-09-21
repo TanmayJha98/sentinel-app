@@ -66,7 +66,7 @@ def save_transaction(parsed_data, raw_text):
 def parse_with_gemini(text_input, key):
     client = genai.Client(api_key=key)
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3.6-flash",
         contents=text_input,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
