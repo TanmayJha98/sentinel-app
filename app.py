@@ -1,7 +1,8 @@
-import streamlit as st
+import time
 import json
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 from google import genai
 from google.genai import types
 from supabase import create_client, Client
@@ -62,19 +63,35 @@ def save_transaction(parsed_data, raw_text):
     }
     supabase.table("transactions").insert(record).execute()
 
-# --- GEMINI AI PARSER ---
+# --- GEMINI AI PARSER WITH AUTO-RETRY & FALLBACK ---
 def parse_with_gemini(text_input, key):
     client = genai.Client(api_key=key)
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=text_input,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            temperature=0.1
-        )
-    )
-    return json.loads(response.text)
+    # List of models to try in sequence if one is overloaded
+    models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
+    
+    last_exception = None
+    for model_name in models_to_try:
+        for attempt in range(2):  # Try up to 2 times per model
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=text_input,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        temperature=0.1
+                    )
+                )
+                return json.loads(response.text)
+            except Exception as e:
+                last_exception = e
+                # If 503 / high demand, pause briefly before retrying or switching models
+                if "503" in str(e) or "UNAVAILABLE" in str(e):
+                    time.sleep(2)
+                else:
+                    break  # Try next model if it's a 404 or other non-transient error
+                    
+    raise last_exception
 
 # --- MAIN APP HEADER ---
 st.title("🛡️ Sentinel: Spending & Habit Tracker")
